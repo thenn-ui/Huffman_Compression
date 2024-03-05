@@ -1,5 +1,4 @@
 # usage $ fcompress <input file name> <output filename>
-
 import sys
 import math
 import os
@@ -7,9 +6,15 @@ from queue import PriorityQueue as pqueue
 
 
 MAX_FILE_READ_SIZE = 1500 # so that whole file is not read into memory at once
+READMODE = 'r'
+WRITEMODE = 'w'
+BWRITEMODE = 'wb'
+
+#Global variables
+symbols={}
+totalcharacters = 0
 
 class Symbol:
-
     sid = None
     sfreq = None
     lchild = None
@@ -43,7 +48,6 @@ class Symbol:
         encodedstring = ''
         
         q = []
-
         q.append(node)
 
         while(q != []):
@@ -69,8 +73,6 @@ class Symbol:
         self.update_codes(node.lchild)
         self.update_codes(node.rchild)
 
-
-
     def __init__(self, name, freq, isinset):
         self.sid = name
         self.sfreq = freq
@@ -93,7 +95,6 @@ class Symbol:
     def __lt__(self, other):
         return self.sfreq < other.sfreq
 
-
     def print_tree(self, node):
 
         if node.lchild is not None:
@@ -105,26 +106,71 @@ class Symbol:
         if node.rchild is not None:
             self.print_tree(node.rchild)
 
+def compress(infile, outfile):
+    
+    huffmantree = construct_huffman_tree(infile)
 
+    print("Starting File Compression...")
 
-def compress(file, outfile):
-   None 
+    while(huffmantree.qsize() > 1):
+        s1 = huffmantree.get()
+        s2 = huffmantree.get()
 
+        s3 = Symbol('sym', s1.sfreq + s2.sfreq, False)
+        s3.set_lchild(s1)
+        s3.set_rchild(s2)
+        s1.set_parent(s3)
+        s2.set_parent(s3)
 
-def get_compressed_file_length(tree):
+        huffmantree.put(s3)
+
+    tree = huffmantree.get()
+    tree.update_codes(tree)
+    #tree.print_tree(tree)
+
+    enctree = tree.get_encoded_tree()
+    treesize = len(enctree)
+
+    size = treesize + get_compressed_file_expected_length(tree) + 2 + len(str(abs(treesize)))
+    print("Expected Compressed bytes = ", size) 
+
+    realsize = len(str(abs(treesize))) + 1
+    realsize += treesize
+
+    outfhandle.write((str(treesize) + '|').encode('latin-1'))
+    outfhandle.write(enctree.encode('latin-1'))
+
+    mappings = tree.get_mappings()
+
+    #print(mappings)
+
+    encstr = ''
+
+    infhandle.seek(0)
+    read_data = infhandle.read(MAX_FILE_READ_SIZE)
+
+    while read_data:
+        for i in range(0,len(read_data)):
+            encstr = encstr + mappings[read_data[i]]
+
+        read_data = infhandle.read(MAX_FILE_READ_SIZE)
+
+    bytestr = get_byte_encoded_str(encstr)
+    realsize += len(bytestr)
+    print("Final calculated size = ", realsize)
+    outfhandle.write(bytestr.encode('latin-1')) 
+
+def get_compressed_file_expected_length(tree):
+    global symbols, totalcharacters
     mappings = tree.get_mappings()
     totalbits = 0
     for key, value in mappings.items():
         symbol_count = symbols[key]/100 * totalcharacters
         numbits = len(value)
         totalbits += numbits*symbol_count
-        print("symbol - ", key, "bits used - ", numbits, "freq - ", symbol_count, "total chars - ", totalcharacters)
-
-
+        #print("symbol - ", key, "bits used - ", numbits, "freq - ", symbol_count, "total chars - ", totalcharacters)
 
     return totalbits/8
-
-
 
 def convert_str_to_byte(bitstr):
     bits = 0x0
@@ -138,9 +184,9 @@ def convert_str_to_byte(bitstr):
 def get_byte_encoded_str(bitstring):
 
     size = len(bitstring)
-    print("============================")
-    print(bitstring)
-    print("============================")
+    #print("============================")
+    #print(bitstring)
+    #print("============================")
 
     bytearr = []
 
@@ -156,13 +202,10 @@ def get_byte_encoded_str(bitstring):
     for i in chrlist:
         finalres += i
 
-    print(finalres)
+    #print(finalres)
     
     return finalres
 
-
-
-##  priority queue implementation goes here:
 
 # convert tups to dict
 def convert(tups, d):
@@ -175,7 +218,6 @@ def sort_dict(d):
     convert(tups, sorted_dict)
     return sorted_dict
 
-
 def write_bindata(file, write_data):
     writebuff = bytes(write_data, 'utf-8')
     file.write(writebuff)
@@ -183,24 +225,21 @@ def write_bindata(file, write_data):
 def write_data(file, write_data):
     file.write(write_data)
 
-
-if __name__ == "__main__":
+def parseArgs(minlimit=3):
     n = len(sys.argv)
 
-    if n < 3:
+    if n < minlimit:
         print("Error: Check arguments to fcompress")
         exit(1)
 
-    inputfilename = sys.argv[1]
-    outputfilename = sys.argv[2]
+    return sys.argv[1], sys.argv[2]
 
-
-    infhandle = open(inputfilename, 'r', encoding='utf-8')
-    outfhandle = open(outputfilename, 'wb')
-
+def construct_huffman_tree(infhandle):
+    global symbols, totalcharacters
     read_data = infhandle.read(MAX_FILE_READ_SIZE)
     symbols = {}
     totalcharacters = 0
+    
     huffmantree = pqueue()
 
     while read_data:
@@ -213,77 +252,32 @@ if __name__ == "__main__":
 
         read_data = infhandle.read(MAX_FILE_READ_SIZE)
 
-    
-    print(symbols)
-    print(totalcharacters)
+    #print(symbols)
+    #print(totalcharacters)
+        
     for key, value in symbols.items():
         symbols[key] = symbols[key]/totalcharacters * 100
         s = Symbol(key, symbols[key], True)
         huffmantree.put(s)
 
+    return huffmantree
 
-    #symbols = sort_dict(symbols)
+if __name__ == "__main__":
+    
+    inputfilename, outputfilename = parseArgs(minlimit=3)
 
-    print(symbols)
+    infhandle = open(inputfilename, READMODE, encoding='utf-8')
+    outfhandle = open(outputfilename, BWRITEMODE)
 
-    print("Starting File Compression...")
-
-    i = 0
-    while(huffmantree.qsize() > 1):
-        s1 = huffmantree.get()
-        s2 = huffmantree.get()
-
-        s3 = Symbol('s' + str(i), s1.sfreq + s2.sfreq, False)
-        s3.set_lchild(s1)
-        s3.set_rchild(s2)
-        s1.set_parent(s3)
-        s2.set_parent(s3)
-
-        i += 1
-
-        huffmantree.put(s3)
-
+    compress(infhandle, outfhandle)
    
-    tree = huffmantree.get()
-    tree.update_codes(tree)
-    tree.print_tree(tree)
-
-    enctree = tree.get_encoded_tree()
-    treesize = len(enctree)
-
-    size = treesize + get_compressed_file_length(tree) + 2 + len(str(abs(treesize)))
-    print("Expected Compressed bytes = ", size) 
-
-
-    realsize = len(str(abs(treesize))) + 1
-    realsize += treesize
-    outfhandle.write((str(treesize) + '|').encode('latin-1'))
-    outfhandle.write(enctree.encode('latin-1'))
-
-    mappings = tree.get_mappings()
-
-    print(mappings)
-
-    encstr = ''
-
-    infhandle.seek(0)
-    read_data = infhandle.read(MAX_FILE_READ_SIZE)
-
-    while read_data:
-        for i in range(0,len(read_data)):
-            encstr = encstr + mappings[read_data[i]]
-
-        read_data = infhandle.read(MAX_FILE_READ_SIZE)
-
-
-    bytestr = get_byte_encoded_str(encstr)
-    realsize += len(bytestr)
-    print("Final calculated size = ", realsize)
-
-    outfhandle.write(bytestr.encode('latin-1'))
-
-    infilesize = os.path.getsize('./inputfile')
-    outfilesize = os.path.getsize('./out')
+    outfhandle.close()
+    infhandle.close()
+    
+    #Final results
+    
+    infilesize = os.path.getsize(inputfilename)
+    outfilesize = os.path.getsize(outputfilename)
 
     print("Input size = ", infilesize, ", outfile size = ", outfilesize, ", ratio = ", infilesize/outfilesize)
 

@@ -3,3 +3,4 @@ outputfile
 test
 __pycache__/*
 *testing
+.vscode
