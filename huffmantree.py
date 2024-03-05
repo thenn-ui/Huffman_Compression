@@ -175,6 +175,11 @@ class PriorityQueue(BinaryTree):
         return tempnode.key
         
 
+    def isEmpty(self):
+        if isinstance(self.root, StarNode):
+            return True
+        
+        return False
             
 
 if __name__ == '__main__':
@@ -212,6 +217,11 @@ if __name__ == '__main__':
     print("[POPPED]")
 
     pq.traverse_inorder(pq.root)
+
+    print("[Final Phase]")
+
+    while(not pq.isEmpty()):
+        print(pq.pop())
 
 
 

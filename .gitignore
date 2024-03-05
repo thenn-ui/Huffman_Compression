@@ -1,3 +1,5 @@
 inputfile
 outputfile
 test
+__pycache__/*
+*testing

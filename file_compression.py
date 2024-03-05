@@ -1,13 +1,165 @@
 # usage $ fcompress <input file name> <output filename>
 
 import sys
-from huffmantree import PriorityQueue as pqueue
+import math
+import os
+from queue import PriorityQueue as pqueue
 
 
 MAX_FILE_READ_SIZE = 1500 # so that whole file is not read into memory at once
 
-def compress():
-    None
+class Symbol:
+
+    sid = None
+    sfreq = None
+    lchild = None
+    rchild = None
+    scode = None
+    parent = None
+    insymbolset = None
+
+    def get_mappings(self):
+        node = self
+        mappings = {}
+        q = []
+        q.append(node)
+
+        while(q != []):
+            node = q.pop(0)
+            if node.insymbolset:
+                mappings[node.sid] = node.scode
+
+            if node.lchild is not None:
+                q.append(node.lchild)
+
+            if node.rchild is not None:
+                q.append(node.rchild)
+
+        return mappings
+   
+    def get_encoded_tree(self):
+
+        node = self
+        encodedstring = ''
+        
+        q = []
+
+        q.append(node)
+
+        while(q != []):
+            node = q.pop(0)
+            if node.insymbolset:
+                encodedstring = encodedstring + repr(node.sid) + ':' + node.scode + '|'
+
+            if node.lchild is not None:
+                q.append(node.lchild)
+
+            if node.rchild is not None:
+                q.append(node.rchild)
+
+        return encodedstring
+        
+    def update_codes(self, node): #PLR traversal
+        if node is None:
+            return
+
+        if node.parent is not None:
+            node.scode = node.parent.scode + node.scode
+
+        self.update_codes(node.lchild)
+        self.update_codes(node.rchild)
+
+
+
+    def __init__(self, name, freq, isinset):
+        self.sid = name
+        self.sfreq = freq
+        self.lchild = None
+        self.rchild = None
+        self.scode = ''
+        self.insymbolset = isinset
+
+    def set_lchild(self, lch):
+        self.lchild = lch
+        lch.scode = "0"
+
+    def set_rchild(self, rch):
+        self.rchild = rch
+        rch.scode = "1"
+
+    def set_parent(self, par):
+        self.parent = par
+
+    def __lt__(self, other):
+        return self.sfreq < other.sfreq
+
+
+    def print_tree(self, node):
+
+        if node.lchild is not None:
+            self.print_tree(node.lchild)
+
+        if node.insymbolset:
+            print(repr(node.sid), node.sfreq, node.scode)
+
+        if node.rchild is not None:
+            self.print_tree(node.rchild)
+
+
+
+def compress(file, outfile):
+   None 
+
+
+def get_compressed_file_length(tree):
+    mappings = tree.get_mappings()
+    totalbits = 0
+    for key, value in mappings.items():
+        symbol_count = symbols[key]/100 * totalcharacters
+        numbits = len(value)
+        totalbits += numbits*symbol_count
+        print("symbol - ", key, "bits used - ", numbits, "freq - ", symbol_count, "total chars - ", totalcharacters)
+
+
+
+    return totalbits/8
+
+
+
+def convert_str_to_byte(bitstr):
+    bits = 0x0
+    for i in range(0, len(bitstr)):
+        if bitstr[i] == '1':
+            bits = (bits << 1) | 1
+        else:
+            bits = bits << 1
+    return bits
+
+def get_byte_encoded_str(bitstring):
+
+    size = len(bitstring)
+    print("============================")
+    print(bitstring)
+    print("============================")
+
+    bytearr = []
+
+    for i in range(0, size, 8):
+        bytestr = bitstring[i:i+8]
+        byte = convert_str_to_byte(bytestr)
+        bytearr.append(byte)
+
+    chrlist = [chr(item) for item in bytearr]
+    
+    finalres = ''
+    
+    for i in chrlist:
+        finalres += i
+
+    print(finalres)
+    
+    return finalres
+
 
 
 ##  priority queue implementation goes here:
@@ -49,6 +201,8 @@ if __name__ == "__main__":
     read_data = infhandle.read(MAX_FILE_READ_SIZE)
     symbols = {}
     totalcharacters = 0
+    huffmantree = pqueue()
+
     while read_data:
         for i in range(0,len(read_data)):
             if read_data[i] in symbols:
@@ -62,12 +216,75 @@ if __name__ == "__main__":
     
     print(symbols)
     print(totalcharacters)
-    #for key, value in symbols.items():
-        #symbols[key] = symbols[key]/totalcharacters * 100
+    for key, value in symbols.items():
+        symbols[key] = symbols[key]/totalcharacters * 100
+        s = Symbol(key, symbols[key], True)
+        huffmantree.put(s)
 
-    symbols = sort_dict(symbols)
+
+    #symbols = sort_dict(symbols)
 
     print(symbols)
 
     print("Starting File Compression...")
-    
+
+    i = 0
+    while(huffmantree.qsize() > 1):
+        s1 = huffmantree.get()
+        s2 = huffmantree.get()
+
+        s3 = Symbol('s' + str(i), s1.sfreq + s2.sfreq, False)
+        s3.set_lchild(s1)
+        s3.set_rchild(s2)
+        s1.set_parent(s3)
+        s2.set_parent(s3)
+
+        i += 1
+
+        huffmantree.put(s3)
+
+   
+    tree = huffmantree.get()
+    tree.update_codes(tree)
+    tree.print_tree(tree)
+
+    enctree = tree.get_encoded_tree()
+    treesize = len(enctree)
+
+    size = treesize + get_compressed_file_length(tree) + 2 + len(str(abs(treesize)))
+    print("Expected Compressed bytes = ", size) 
+
+
+    realsize = len(str(abs(treesize))) + 1
+    realsize += treesize
+    outfhandle.write((str(treesize) + '|').encode('latin-1'))
+    outfhandle.write(enctree.encode('latin-1'))
+
+    mappings = tree.get_mappings()
+
+    print(mappings)
+
+    encstr = ''
+
+    infhandle.seek(0)
+    read_data = infhandle.read(MAX_FILE_READ_SIZE)
+
+    while read_data:
+        for i in range(0,len(read_data)):
+            encstr = encstr + mappings[read_data[i]]
+
+        read_data = infhandle.read(MAX_FILE_READ_SIZE)
+
+
+    bytestr = get_byte_encoded_str(encstr)
+    realsize += len(bytestr)
+    print("Final calculated size = ", realsize)
+
+    outfhandle.write(bytestr.encode('latin-1'))
+
+    infilesize = os.path.getsize('./inputfile')
+    outfilesize = os.path.getsize('./out')
+
+    print("Input size = ", infilesize, ", outfile size = ", outfilesize, ", ratio = ", infilesize/outfilesize)
+
+    #print("Testsizez = ", sys.getsizeof(bytestr.encode('latin-1') + (str(abs(treesize)) + '|').encode('latin-1') + enctree.encode('latin-1')))
